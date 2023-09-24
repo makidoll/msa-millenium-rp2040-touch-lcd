@@ -4,6 +4,7 @@
 #include <math.h>
 #include "screens/maki_profile_picture_screen.h"
 #include "screens/hexcorp_screen.h"
+#include "screens/mechanyx_screen.h"
 
 void printBits(size_t const size, void const * const ptr)
 {
@@ -21,7 +22,7 @@ void printBits(size_t const size, void const * const ptr)
 }
 
 uint8_t currentScreen = 0;
-#define MAX_SCREENS 2 
+#define MAX_SCREENS 3
 
 void Touch_INT_callback(uint gpio, uint32_t events)
 {
@@ -84,6 +85,9 @@ int main(void)
                 break;
             case 1:
                 needsDraw = HexCorpScreen(&hexCorpScreenState, buffer, firstDraw);
+                break;
+            case 2:
+                needsDraw = MechanyxScreen(buffer, firstDraw);
                 break;
         }
 

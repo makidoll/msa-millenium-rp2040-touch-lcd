@@ -12,7 +12,7 @@ typedef struct {
 } HexCorpScreenState;
 
 void InitHexCorpScreenState(HexCorpScreenState* state) {
-	state->hexCorpColor = hexColor(0xff, 0x64, 0xff);
+	state->hexCorpColor = hexColor(0xff, 0x66, 0xff);
 	state->blackColor = hexColor(0x00, 0x00, 0x00);
 }
 
