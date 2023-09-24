@@ -5,6 +5,7 @@
 #include "screens/maki_profile_picture_screen.h"
 #include "screens/hexcorp_screen.h"
 #include "screens/mechanyx_screen.h"
+// #include "screens/game_of_life_screen.h"
 
 void printBits(size_t const size, void const * const ptr)
 {
@@ -33,7 +34,7 @@ void Touch_INT_callback(uint gpio, uint32_t events)
             uint8_t gesture = CST816S_Get_Gesture();
             if (gesture == CST816S_Gesture_Long_Press)
             {
-                if (currentScreen >= MAX_SCREENS - 1) {
+                if (currentScreen >= MAX_SCREENS) {
                     currentScreen = 0; // reset back to 0
                 } else {
                     currentScreen++;
@@ -71,30 +72,38 @@ int main(void)
     HexCorpScreenState hexCorpScreenState;
     InitHexCorpScreenState(&hexCorpScreenState);
 
+    // GameOfLifeScreenState gameOfLifeScreenState;
+    // InitGameOfLifeScreenState(&gameOfLifeScreenState);
+
     // update and draw
 
     while (1) {
         bool firstDraw = lastScreen != currentScreen;
         lastScreen = currentScreen;
 
-        bool needsDraw;
+        bool needsDraw = true;
 
         switch (currentScreen) {
             case 0:
-                needsDraw = MakiProfilePictureScreen(buffer, firstDraw);
-                break;
-            case 1:
                 needsDraw = HexCorpScreen(&hexCorpScreenState, buffer, firstDraw);
                 break;
             case 2:
                 needsDraw = MechanyxScreen(buffer, firstDraw);
                 break;
+            case 3:
+                needsDraw = MakiProfilePictureScreen(buffer, firstDraw);
+                break;
+            // case 0:
+            //     needsDraw = GameOfLifeScreen(&gameOfLifeScreenState, buffer, firstDraw);
+            //     break;
         }
 
         if (needsDraw) {
             LCD_1IN28_Display(buffer);
         }
     }
+
+    (buffer);
     
     DEV_Delay_ms(1000);
 
