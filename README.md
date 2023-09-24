@@ -23,3 +23,7 @@ Hold `BOOT`, press `RESET`, let go of `BOOT`. Screen should off.
 `ninja && sudo picotool load main.uf2`
 
 Press `RESET`
+
+## Usage
+
+Long hold on screen to change screen
