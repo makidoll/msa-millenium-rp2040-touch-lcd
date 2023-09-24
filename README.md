@@ -27,3 +27,13 @@ Press `RESET`
 ## Usage
 
 Long hold on screen to change screen
+
+## Tools
+
+-   **convert-as-240-h** examples:
+
+    Resizes images to 240x240 using Lanczos2 and saves as const unsigned char .h files
+
+    `deno run -A assets/convert-as-240-h.ts assets/maki.png src/images/maki_image.h`
+
+    `deno run -A assets/convert-as-240-h.ts assets/hexcorp.png src/images/hexcorp_image.h --grayscale`
