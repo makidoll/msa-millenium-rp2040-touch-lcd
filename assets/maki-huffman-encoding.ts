@@ -195,7 +195,7 @@ function packEncodedData(data: boolean[]) {
 			.slice(i, i + 8)
 			.map(b => (b === true ? "1" : "0"))
 			.join("")
-			.padEnd(8, "");
+			.padStart(8, "");
 
 		packed[pos] = parseInt(bits, 2);
 		pos++;
