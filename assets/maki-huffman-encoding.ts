@@ -204,7 +204,7 @@ function packEncodedData(data: boolean[]) {
 	return { data: packed, bitsToIgnoreAtEnd: packed.length * 8 - data.length };
 }
 
-export function makiHuffmanEncode(data: Uint8Array) {
+function huffmanEncode(data: Uint8Array) {
 	const frequencyMap = getFrequencyMap(data);
 
 	const encodedData = encodeData(frequencyMap, data);
@@ -231,6 +231,36 @@ export function makiHuffmanEncode(data: Uint8Array) {
 	}
 
 	return packedFinal;
+}
+
+// running huffman encoding multiple times compresses down really well
+// so append a uint8 to describe how many rounds
+
+// keep encoding until file is at its smallest
+
+export function makiHuffmanEncode(data: Uint8Array) {
+	let rounds = 0;
+	let currentData: Uint8Array = data;
+
+	while (true) {
+		const newData = huffmanEncode(currentData);
+		if (newData.length > currentData.length) break;
+		currentData = newData;
+		rounds++;
+	}
+
+	if (rounds == 0) {
+		throw new Error("Can't compress even once");
+	}
+
+	const finalData = new Uint8Array(currentData.length + 1);
+
+	finalData[0] = rounds;
+	for (let i = 0; i < currentData.length; i++) {
+		finalData[i + 1] = currentData[i];
+	}
+
+	return finalData;
 }
 
 function uint16ToNumber(uint16: Uint8Array) {
@@ -260,7 +290,7 @@ function unpackEncodedData(
 	return encodedData.slice(0, encodedData.length - bitsToIgnoreAtEnd);
 }
 
-export function makiHuffmanDecode(data: Uint8Array) {
+function huffmanDecode(data: Uint8Array) {
 	const posToData = uint16ToNumber(data.slice(0, 2));
 	const bitsToIgnoreAtEnd = data[2];
 
@@ -293,3 +323,28 @@ export function makiHuffmanDecode(data: Uint8Array) {
 
 	return decodedData;
 }
+
+export function makiHuffmanDecode(data: Uint8Array) {
+	const rounds = data[0];
+	console.log(rounds);
+
+	let currentData = data.slice(1, data.length);
+
+	for (let i = 0; i < rounds; i++) {
+		currentData = huffmanDecode(currentData);
+	}
+
+	return currentData;
+}
+
+// const testInput = await Deno.readFile("./assets/test.png");
+// console.log(testInput.length / 1000 + " KB");
+
+// const testEncoded = makiHuffmanEncode(testInput);
+// console.log(testEncoded.length / 1000 + " KB");
+
+// await Deno.writeFile("./test.raw", testEncoded);
+
+// const testDecoded = makiHuffmanDecode(testEncoded);
+
+// await Deno.writeFile("./test-out.png", testDecoded);
