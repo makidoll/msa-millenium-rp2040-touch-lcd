@@ -234,9 +234,10 @@ function huffmanEncode(data: Uint8Array) {
 }
 
 // running huffman encoding multiple times compresses down really well
-// so append a uint8 to describe how many rounds
+// so keep encoding until at smallest and then append rounds to file
 
-// keep encoding until file is at its smallest
+// [uint8: rounds]
+// [uint32: final decoded size]
 
 export function makiHuffmanEncode(data: Uint8Array) {
 	let rounds = 0;
@@ -253,11 +254,19 @@ export function makiHuffmanEncode(data: Uint8Array) {
 		throw new Error("Can't compress even once");
 	}
 
-	const finalData = new Uint8Array(currentData.length + 1);
+	const finalDecodedSize = uintXto8(32, data.length);
+
+	const dataOffset = 1 + 4;
+	const finalData = new Uint8Array(currentData.length + dataOffset);
 
 	finalData[0] = rounds;
+	finalData[1] = finalDecodedSize[0];
+	finalData[2] = finalDecodedSize[1];
+	finalData[3] = finalDecodedSize[2];
+	finalData[4] = finalDecodedSize[3];
+
 	for (let i = 0; i < currentData.length; i++) {
-		finalData[i + 1] = currentData[i];
+		finalData[i + dataOffset] = currentData[i];
 	}
 
 	return finalData;
@@ -326,9 +335,11 @@ function huffmanDecode(data: Uint8Array) {
 
 export function makiHuffmanDecode(data: Uint8Array) {
 	const rounds = data[0];
-	console.log(rounds);
 
-	let currentData = data.slice(1, data.length);
+	// const finalDataSize = uint32ToNumber(data.slice(1, 5));
+	// this is to optimize for c
+
+	let currentData = data.slice(5, data.length);
 
 	for (let i = 0; i < rounds; i++) {
 		currentData = huffmanDecode(currentData);
@@ -337,7 +348,8 @@ export function makiHuffmanDecode(data: Uint8Array) {
 	return currentData;
 }
 
-// const testInput = await Deno.readFile("./assets/test.png");
+// const testInput = await Deno.readFile("./assets/hexcorp.png");
+// console.log(testInput.length);
 // console.log(testInput.length / 1000 + " KB");
 
 // const testEncoded = makiHuffmanEncode(testInput);
@@ -347,4 +359,4 @@ export function makiHuffmanDecode(data: Uint8Array) {
 
 // const testDecoded = makiHuffmanDecode(testEncoded);
 
-// await Deno.writeFile("./test-out.png", testDecoded);
+// await Deno.writeFile("./test.png", testDecoded);
