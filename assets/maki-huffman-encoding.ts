@@ -27,17 +27,17 @@ interface HuffNode {
 }
 
 function frequencyMapToNodes(freqs: FrequencyMap): {
-	charNodes: HuffNode[];
+	byteNodes: HuffNode[];
 	rootNode: HuffNode;
 } {
-	const charNodes: HuffNode[] = Array.from(freqs.entries()).map(
+	const byteNodes: HuffNode[] = Array.from(freqs.entries()).map(
 		([byte, freq]) => ({ byte, freq }),
 	);
 
 	// new array but keep references
-	let topLevelNodes = new Array(charNodes.length)
+	let topLevelNodes = new Array(byteNodes.length)
 		.fill(null)
-		.map((_, i) => charNodes[i]);
+		.map((_, i) => byteNodes[i]);
 
 	while (true) {
 		if (topLevelNodes.length == 1) break;
@@ -76,18 +76,18 @@ function frequencyMapToNodes(freqs: FrequencyMap): {
 
 	const rootNode = topLevelNodes[0];
 
-	return { charNodes, rootNode };
+	return { byteNodes, rootNode };
 }
 
 function encodeData(frequencyMap: FrequencyMap, data: Uint8Array) {
-	const { charNodes } = frequencyMapToNodes(frequencyMap);
+	const { byteNodes } = frequencyMapToNodes(frequencyMap);
 
 	let allBits: boolean[] = [];
 
 	for (const byte of data) {
 		let seq: string[] = [];
 
-		let currentNode: HuffNode | undefined = charNodes.find(
+		let currentNode: HuffNode | undefined = byteNodes.find(
 			n => n.byte == byte,
 		);
 
@@ -430,11 +430,23 @@ export function makiHuffmanDecode(data: Uint8Array) {
 // console.log(testInput.length / 1000 + " KB");
 
 // const testInput = await Deno.readFile("./test-input.png");
-// // console.log(testInput[testInput.length - 1].toString(2).padStart(8, "0"));
+// // // console.log(testInput[testInput.length - 1].toString(2).padStart(8, "0"));
 
-// let testEncoded = makiHuffmanEncode(testInput);
+// let testEncoded = huffmanEncode(testInput);
+// await Deno.writeFile("./test-compressed.raw", testEncoded);
 
-// let testDecoded = makiHuffmanDecode(testEncoded);
+// // let testDecoded = makiHuffmanDecode(testEncoded);
 
-// // console.log(testDecoded[testInput.length - 1].toString(2).padStart(8, "0"));
-// await Deno.writeFile("./test-output.png", testDecoded);
+// // // console.log(testDecoded[testInput.length - 1].toString(2).padStart(8, "0"));
+// // await Deno.writeFile("./test-output.png", testDecoded);
+
+// const cData = Array.from(testEncoded).join(",");
+
+// const cOut = `
+// #ifndef TEST_IMAGE
+// #define TEST_IMAGE
+// const unsigned char test_image[${testEncoded.length}] = {${cData}};
+// #endif
+// `;
+
+// await Deno.writeTextFile("./test_image.h", cOut.trim() + "\n");
