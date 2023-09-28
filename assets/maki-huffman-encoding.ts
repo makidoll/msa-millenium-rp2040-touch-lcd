@@ -130,17 +130,6 @@ function decode(frequencyMap: FrequencyMap, encoded: boolean[]) {
 	return Uint8Array.from(bytes);
 }
 
-// our file format
-
-// header (fixed length of 2 byte):
-// [uint16: position to data]
-// [uint8: how many bits to ignore on last byte, since data is packed]
-
-// frequency map (array):
-// [uint8: byte] [uint8: uint size: 1:8, 2:16, 3:32] [uint8/16/32: frequency]
-
-// data (packed uint8 array)
-
 const MAX_UINT8 = 255;
 const MAX_UINT16 = 65535;
 // const MAX_UINT32 = 4294967295;
@@ -158,32 +147,69 @@ function uintXto8(x: 16 | 32, value: number): number[] {
 	return Array.from(tempB);
 }
 
+// frequency map:
+//
+// for each frequency figure out if we need uint8/16/32
+// uint8 => 00
+// uint16 => 01
+// uint32 => 10
+// EOF => 11 used once
+//
+// ...pack the above into uint8 array.
+// add one extra if necessary just for the EOF 0b11
+//
+// ...array of [uint8: byte] [uint8/16/32: frequency]
+//
+// no eof needed cause we already defined sizes above
+
+function chunk<T>(array: T[], size: number) {
+	return Array.from({ length: Math.ceil(array.length / size) }, (_, i) =>
+		array.slice(i * size, i * size + size),
+	);
+}
+
 function packFrequencyMap(frequencyMap: FrequencyMap): Uint8Array {
-	const encoded: number[] = [];
+	const frequencyMapEntries = Array.from(frequencyMap.entries());
 
-	for (const [byte, frequency] of frequencyMap.entries()) {
-		encoded.push(byte);
+	let frequencyUintSize: number[] = [];
+	let frequencyUintSizeBinary: string[] = [];
 
-		let freqUintSize = 1; // uint8
-
+	for (const [_, frequency] of frequencyMapEntries) {
 		if (frequency > MAX_UINT16) {
-			freqUintSize = 3; // uint32
+			frequencyUintSize.push(32); // uint32
+			frequencyUintSizeBinary.push("1", "0");
 		} else if (frequency > MAX_UINT8) {
-			freqUintSize = 2; // uint16
-		}
-
-		encoded.push(freqUintSize);
-
-		if (freqUintSize == 1) {
-			encoded.push(frequency);
-		} else if (freqUintSize == 2) {
-			encoded.push(...uintXto8(16, frequency));
-		} else if (freqUintSize == 3) {
-			encoded.push(...uintXto8(32, frequency));
+			frequencyUintSize.push(16); // uint16
+			frequencyUintSizeBinary.push("0", "1");
+		} else {
+			frequencyUintSize.push(8); // uint8
+			frequencyUintSizeBinary.push("0", "0");
 		}
 	}
 
-	return Uint8Array.from(encoded);
+	frequencyUintSizeBinary.push("1", "1"); // eof
+
+	const packed: number[] = chunk<string>(frequencyUintSizeBinary, 8).map(
+		byte => parseInt(byte.join("").padEnd(8, "0"), 2),
+	);
+
+	for (let i = 0; i < frequencyMapEntries.length; i++) {
+		const [byte, frequency] = frequencyMapEntries[i];
+
+		packed.push(byte);
+
+		const uintSize = frequencyUintSize[i];
+
+		if (uintSize == 8) {
+			packed.push(frequency);
+		} else if (uintSize == 16) {
+			packed.push(...uintXto8(16, frequency));
+		} else if (uintSize == 32) {
+			packed.push(...uintXto8(32, frequency));
+		}
+	}
+
+	return Uint8Array.from(packed);
 }
 
 function packEncodedData(data: boolean[]) {
@@ -204,6 +230,14 @@ function packEncodedData(data: boolean[]) {
 	return { data: packed, bitsToIgnoreAtEnd: packed.length * 8 - data.length };
 }
 
+// header (fixed length of 1 byte):
+//
+// [uint8: how many bits to ignore on last byte, since data is packed]
+//
+// ...packed frequency map
+//
+// ...packed data
+
 function huffmanEncode(data: Uint8Array) {
 	const frequencyMap = getFrequencyMap(data);
 
@@ -213,20 +247,17 @@ function huffmanEncode(data: Uint8Array) {
 	const packedEncodedData = packEncodedData(encodedData);
 
 	const packedFinal = new Uint8Array(
-		3 + packedFrequencyMap.length + packedEncodedData.data.length,
+		1 + packedFrequencyMap.length + packedEncodedData.data.length,
 	);
 
-	const posToData = uintXto8(16, 3 + packedFrequencyMap.length);
-	packedFinal[0] = posToData[0];
-	packedFinal[1] = posToData[1];
-	packedFinal[2] = packedEncodedData.bitsToIgnoreAtEnd;
+	packedFinal[0] = packedEncodedData.bitsToIgnoreAtEnd;
 
 	for (let i = 0; i < packedFrequencyMap.length; i++) {
-		packedFinal[3 + i] = packedFrequencyMap[i];
+		packedFinal[1 + i] = packedFrequencyMap[i];
 	}
 
 	for (let i = 0; i < packedEncodedData.data.length; i++) {
-		packedFinal[3 + packedFrequencyMap.length + i] =
+		packedFinal[1 + packedFrequencyMap.length + i] =
 			packedEncodedData.data[i];
 	}
 
@@ -300,32 +331,78 @@ function unpackEncodedData(
 }
 
 function huffmanDecode(data: Uint8Array) {
-	const posToData = uint16ToNumber(data.slice(0, 2));
-	const bitsToIgnoreAtEnd = data[2];
+	let pos = 0;
+
+	const bitsToIgnoreAtEnd = data[pos++];
+
+	// unpack frequency map uint sizes
+
+	let frequencyUintSizes: number[] = []; // 8, 16, 32, -1
+
+	while (true) {
+		let byte = data[pos++];
+		let binary = byte.toString(2).padStart(8, "0");
+
+		let uintSizes = chunk(binary.split(""), 2)
+			.map(a => a.join(""))
+			.map(type => {
+				if (type == "00") {
+					return 8;
+				} else if (type == "01") {
+					return 16;
+				} else if (type == "10") {
+					return 32;
+				} else {
+					return -1;
+				}
+			});
+
+		if (uintSizes.includes(-1)) {
+			// EOF found
+			// remove -1 and all after
+			uintSizes.splice(uintSizes.indexOf(-1), 999);
+			// append and break
+			frequencyUintSizes = [...frequencyUintSizes, ...uintSizes];
+			break;
+		} else {
+			// just append
+			frequencyUintSizes = [...frequencyUintSizes, ...uintSizes];
+		}
+	}
+
+	// unpack frequency map data
 
 	const frequencyMap: FrequencyMap = new Map();
 
-	let pos = 3;
-	while (pos < posToData) {
+	for (const uintSize of frequencyUintSizes) {
 		const byte = data[pos++];
-		const uintSize = data[pos++];
 
 		let frequency = 0;
 
-		if (uintSize == 1) {
-			frequency = data[pos++]; // uint8
-		} else if (uintSize == 2) {
-			frequency = uint16ToNumber(data.slice(pos, (pos += 2)));
-		} else if (uintSize == 3) {
-			frequency = uint32ToNumber(data.slice(pos, (pos += 4)));
-		} else {
-			throw new Error("Unknown uint size");
+		if (uintSize == 8) {
+			frequency = data[pos++];
+		} else if (uintSize == 16) {
+			frequency = uint16ToNumber(
+				Uint8Array.from([data[pos++], data[pos++]]),
+			);
+		} else if (uintSize == 32) {
+			frequency = uint32ToNumber(
+				Uint8Array.from([
+					data[pos++],
+					data[pos++],
+					data[pos++],
+					data[pos++],
+				]),
+			);
 		}
 
 		frequencyMap.set(byte, frequency);
 	}
 
-	const packedEncodedData = data.slice(pos, data.length);
+	// unpack encoded data
+
+	const packedEncodedData = data.slice(pos);
+
 	const encodedData = unpackEncodedData(packedEncodedData, bitsToIgnoreAtEnd);
 
 	const decodedData = decode(frequencyMap, encodedData);
@@ -336,8 +413,8 @@ function huffmanDecode(data: Uint8Array) {
 export function makiHuffmanDecode(data: Uint8Array) {
 	const rounds = data[0];
 
-	// const finalDataSize = uint32ToNumber(data.slice(1, 5));
 	// this is to optimize for c
+	// const finalDataSize = uint32ToNumber(data.slice(1, 5));
 
 	let currentData = data.slice(5, data.length);
 
@@ -348,15 +425,14 @@ export function makiHuffmanDecode(data: Uint8Array) {
 	return currentData;
 }
 
-// const testInput = await Deno.readFile("./assets/hexcorp.png");
-// console.log(testInput.length);
 // console.log(testInput.length / 1000 + " KB");
 
-// const testEncoded = makiHuffmanEncode(testInput);
-// console.log(testEncoded.length / 1000 + " KB");
+const testInput = await Deno.readFile("./test-input.png");
+// console.log(testInput[testInput.length - 1].toString(2).padStart(8, "0"));
 
-// await Deno.writeFile("./test.raw", testEncoded);
+let testEncoded = makiHuffmanEncode(testInput);
 
-// const testDecoded = makiHuffmanDecode(testEncoded);
+let testDecoded = makiHuffmanDecode(testEncoded);
 
-// await Deno.writeFile("./test.png", testDecoded);
+// console.log(testDecoded[testInput.length - 1].toString(2).padStart(8, "0"));
+await Deno.writeFile("./test-output.png", testDecoded);
