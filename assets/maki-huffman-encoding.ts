@@ -79,9 +79,7 @@ function frequencyMapToNodes(freqs: FrequencyMap): {
 	return { byteNodes, rootNode };
 }
 
-function encodeData(frequencyMap: FrequencyMap, data: Uint8Array) {
-	const { byteNodes } = frequencyMapToNodes(frequencyMap);
-
+function encodeData(byteNodes: HuffNode[], data: Uint8Array) {
 	let allBits: boolean[] = [];
 
 	for (const byte of data) {
@@ -108,30 +106,8 @@ function encodeData(frequencyMap: FrequencyMap, data: Uint8Array) {
 	return allBits;
 }
 
-function decode(frequencyMap: FrequencyMap, encoded: boolean[]) {
-	const { rootNode } = frequencyMapToNodes(frequencyMap);
-
-	let bytes: number[] = [];
-
-	let currentNode: HuffNode | undefined = rootNode;
-
-	for (const bit of encoded) {
-		currentNode = bit == false ? currentNode?.left : currentNode?.right;
-
-		if (currentNode?.byte == null) {
-			continue;
-		}
-
-		bytes.push(currentNode.byte);
-
-		currentNode = rootNode;
-	}
-
-	return Uint8Array.from(bytes);
-}
-
-const MAX_UINT8 = 255;
-const MAX_UINT16 = 65535;
+// const MAX_UINT8 = 255;
+// const MAX_UINT16 = 65535;
 // const MAX_UINT32 = 4294967295;
 
 function uintXto8(x: 16 | 32, value: number): number[] {
@@ -147,20 +123,19 @@ function uintXto8(x: 16 | 32, value: number): number[] {
 	return Array.from(tempB);
 }
 
-// frequency map:
+// to pack root node:
 //
-// for each frequency figure out if we need uint8/16/32
-// uint8 => 00
-// uint16 => 01
-// uint32 => 10
-// EOF => 11 used once
+// [uint32 total nodes]
 //
-// ...pack the above into uint8 array.
-// add one extra if necessary just for the EOF 0b11
+// for each node use pack bits to store info
+// 0/1 => has left
+// 0/1 => has right
+// if left and right are both 0, there's a byte
 //
-// ...array of [uint8: byte] [uint8/16/32: frequency]
+// ...pack the above into uint8 array. total nodes is array size
 //
-// no eof needed cause we already defined sizes above
+// ...array of [uint8: byte]
+// no eof needed cause we can calculate size above
 
 function chunk<T>(array: T[], size: number) {
 	return Array.from({ length: Math.ceil(array.length / size) }, (_, i) =>
@@ -168,48 +143,64 @@ function chunk<T>(array: T[], size: number) {
 	);
 }
 
-function packFrequencyMap(frequencyMap: FrequencyMap): Uint8Array {
-	const frequencyMapEntries = Array.from(frequencyMap.entries());
+interface SerializedNodes {
+	nodeArray: { left: boolean; right: boolean }[];
+	byteArray: number[];
+}
 
-	let frequencyUintSize: number[] = [];
-	let frequencyUintSizeBinary: string[] = [];
+function packNode(node: HuffNode, serializedNodes: SerializedNodes) {
+	serializedNodes.nodeArray.push({ left: !!node.left, right: !!node.right });
 
-	for (const [_, frequency] of frequencyMapEntries) {
-		if (frequency > MAX_UINT16) {
-			frequencyUintSize.push(32); // uint32
-			frequencyUintSizeBinary.push("1", "0");
-		} else if (frequency > MAX_UINT8) {
-			frequencyUintSize.push(16); // uint16
-			frequencyUintSizeBinary.push("0", "1");
-		} else {
-			frequencyUintSize.push(8); // uint8
-			frequencyUintSizeBinary.push("0", "0");
-		}
+	if (node.left == null && node.right == null) {
+		serializedNodes.byteArray.push(node.byte as any);
+		return;
 	}
 
-	frequencyUintSizeBinary.push("1", "1"); // eof
+	if (node.left != null) {
+		packNode(node.left, serializedNodes);
+	}
 
-	const packed: number[] = chunk<string>(frequencyUintSizeBinary, 8).map(
-		byte => parseInt(byte.join("").padEnd(8, "0"), 2),
+	if (node.right != null) {
+		packNode(node.right, serializedNodes);
+	}
+}
+
+function packNodesFromRoot(rootNode: HuffNode) {
+	const serializedNodes: SerializedNodes = {
+		nodeArray: [],
+		byteArray: [],
+	};
+
+	packNode(rootNode, serializedNodes);
+
+	const packedNodeArray = chunk(
+		serializedNodes.nodeArray
+			.map(node => (node.left ? "1" : "0") + (node.right ? "1" : "0"))
+			.join("")
+			.split(""),
+		8,
+	).map(bits => parseInt(bits.join("").padEnd(8, "0"), 2));
+
+	let pos = 0;
+	const finalPacked = new Uint8Array(
+		4 + packedNodeArray.length + serializedNodes.byteArray.length,
 	);
 
-	for (let i = 0; i < frequencyMapEntries.length; i++) {
-		const [byte, frequency] = frequencyMapEntries[i];
+	const totalNodesUint8 = uintXto8(32, serializedNodes.nodeArray.length);
+	finalPacked[pos++] = totalNodesUint8[0];
+	finalPacked[pos++] = totalNodesUint8[1];
+	finalPacked[pos++] = totalNodesUint8[2];
+	finalPacked[pos++] = totalNodesUint8[3];
 
-		packed.push(byte);
-
-		const uintSize = frequencyUintSize[i];
-
-		if (uintSize == 8) {
-			packed.push(frequency);
-		} else if (uintSize == 16) {
-			packed.push(...uintXto8(16, frequency));
-		} else if (uintSize == 32) {
-			packed.push(...uintXto8(32, frequency));
-		}
+	for (const packedHasSize of packedNodeArray) {
+		finalPacked[pos++] = packedHasSize;
 	}
 
-	return Uint8Array.from(packed);
+	for (const byte of serializedNodes.byteArray) {
+		finalPacked[pos++] = byte;
+	}
+
+	return finalPacked;
 }
 
 function packEncodedData(data: boolean[]) {
@@ -233,42 +224,167 @@ function packEncodedData(data: boolean[]) {
 // header (fixed length of 1 byte):
 //
 // [uint8: how many bits to ignore on last byte, since data is packed]
+// [uint32: final decoded size]
 //
-// ...packed frequency map
+// ...packed nodes from root
 //
 // ...packed data
 
 function huffmanEncode(data: Uint8Array) {
 	const frequencyMap = getFrequencyMap(data);
+	const { byteNodes, rootNode } = frequencyMapToNodes(frequencyMap);
 
-	const encodedData = encodeData(frequencyMap, data);
+	const packedNodesFromRoot = packNodesFromRoot(rootNode);
 
-	const packedFrequencyMap = packFrequencyMap(frequencyMap);
+	const encodedData = encodeData(byteNodes, data);
 	const packedEncodedData = packEncodedData(encodedData);
 
+	let pos = 0;
 	const packedFinal = new Uint8Array(
-		1 + packedFrequencyMap.length + packedEncodedData.data.length,
+		1 + 4 + packedNodesFromRoot.length + packedEncodedData.data.length,
 	);
 
-	packedFinal[0] = packedEncodedData.bitsToIgnoreAtEnd;
+	packedFinal[pos++] = packedEncodedData.bitsToIgnoreAtEnd;
 
-	for (let i = 0; i < packedFrequencyMap.length; i++) {
-		packedFinal[1 + i] = packedFrequencyMap[i];
+	const finalDecodedSize = uintXto8(32, data.length);
+	packedFinal[pos++] = finalDecodedSize[0];
+	packedFinal[pos++] = finalDecodedSize[1];
+	packedFinal[pos++] = finalDecodedSize[2];
+	packedFinal[pos++] = finalDecodedSize[3];
+
+	for (const byte of packedNodesFromRoot) {
+		packedFinal[pos++] = byte;
 	}
 
-	for (let i = 0; i < packedEncodedData.data.length; i++) {
-		packedFinal[1 + packedFrequencyMap.length + i] =
-			packedEncodedData.data[i];
+	for (const byte of packedEncodedData.data) {
+		packedFinal[pos++] = byte;
 	}
 
 	return packedFinal;
+}
+
+function uint16ToNumber(uint16: Uint8Array) {
+	return new Uint16Array(uint16.buffer, 0, 1)[0];
+}
+
+function uint32ToNumber(uint32: Uint8Array) {
+	return new Uint32Array(uint32.buffer, 0, 1)[0];
+}
+
+interface DecodeNode {
+	left?: DecodeNode;
+	right?: DecodeNode;
+	byte?: number;
+}
+
+function unpackNodesFromRoot(data: Uint8Array, pos: number) {
+	const totalNodes = uint32ToNumber(data.slice(pos, pos + 4));
+	pos += 4;
+
+	const hasSideArray: { left: boolean; right: boolean }[] = [];
+	let nodesRead = 0;
+
+	while (nodesRead < totalNodes) {
+		const byte = data[pos++].toString(2).padStart(8, "0");
+
+		for (let i = 0; i < 4; i++) {
+			const hasSides = byte.slice(i * 2, i * 2 + 2).split("");
+
+			hasSideArray.push({
+				left: hasSides[0] == "1",
+				right: hasSides[1] == "1",
+			});
+
+			nodesRead++;
+
+			if (nodesRead >= totalNodes) break;
+		}
+	}
+
+	// pos starts at byte array
+
+	let hasSideCurrentIndex = 0;
+
+	function processHasSide(): DecodeNode {
+		const hasSide = hasSideArray[hasSideCurrentIndex];
+
+		if (hasSide.left == false && hasSide.right == false) {
+			return { byte: data[pos++] };
+		}
+
+		const node: DecodeNode = {};
+
+		if (hasSide.left) {
+			hasSideCurrentIndex++;
+			node.left = processHasSide();
+		}
+
+		if (hasSide.right) {
+			hasSideCurrentIndex++;
+			node.right = processHasSide();
+		}
+
+		return node;
+	}
+
+	const rootNode = processHasSide();
+
+	return { rootNode, pos };
+}
+
+function huffmanDecode(data: Uint8Array) {
+	let pos = 0;
+
+	const bitsToIgnoreAtEnd = data[pos++];
+
+	const decodedSize = uint32ToNumber(data.slice(pos, pos + 4));
+	pos += 4;
+
+	// unpack nodes from root
+
+	const unpackedNodes = unpackNodesFromRoot(data, pos);
+	const rootNode = unpackedNodes.rootNode;
+	pos = unpackedNodes.pos;
+
+	// unpack encoded data
+
+	let bitPos = 0;
+
+	function getNextBit() {
+		if (bitPos > 7) {
+			bitPos = 0;
+			pos++;
+		}
+		return data[pos].toString(2).padStart(8, "0")[bitPos++];
+	}
+
+	const decodedData = new Uint8Array(decodedSize);
+	let decodedDataIndex = 0;
+
+	let currentNode: DecodeNode = rootNode;
+
+	while (pos < data.length - bitsToIgnoreAtEnd) {
+		const bit = getNextBit();
+
+		if (bit == "0") {
+			currentNode = currentNode.left as any;
+		} else if (bit == "1") {
+			currentNode = currentNode.right as any;
+		}
+
+		if (currentNode.byte != null) {
+			decodedData[decodedDataIndex++] = currentNode.byte;
+			currentNode = rootNode;
+		}
+	}
+
+	return decodedData;
 }
 
 // running huffman encoding multiple times compresses down really well
 // so keep encoding until at smallest and then append rounds to file
 //
 // [uint8: rounds]
-// [uint32: final decoded size, helps for decompressing efficiently]
 //
 // ...packed
 
@@ -287,138 +403,21 @@ export function makiHuffmanEncode(data: Uint8Array) {
 		throw new Error("Can't compress even once");
 	}
 
-	const finalDecodedSize = uintXto8(32, data.length);
-
-	const dataOffset = 1 + 4;
-	const finalData = new Uint8Array(currentData.length + dataOffset);
+	const finalData = new Uint8Array(1 + currentData.length);
 
 	finalData[0] = rounds;
-	finalData[1] = finalDecodedSize[0];
-	finalData[2] = finalDecodedSize[1];
-	finalData[3] = finalDecodedSize[2];
-	finalData[4] = finalDecodedSize[3];
 
 	for (let i = 0; i < currentData.length; i++) {
-		finalData[i + dataOffset] = currentData[i];
+		finalData[1 + i] = currentData[i];
 	}
 
 	return finalData;
 }
 
-function uint16ToNumber(uint16: Uint8Array) {
-	return new Uint16Array(uint16.buffer, 0, 1)[0];
-}
-
-function uint32ToNumber(uint32: Uint8Array) {
-	return new Uint32Array(uint32.buffer, 0, 1)[0];
-}
-
-function unpackEncodedData(
-	packedEncodedData: Uint8Array,
-	bitsToIgnoreAtEnd: number,
-): boolean[] {
-	const encodedData: boolean[] = [];
-
-	for (let byte of packedEncodedData) {
-		encodedData.push(
-			...byte
-				.toString(2)
-				.padStart(8, "0")
-				.split("")
-				.map(b => b == "1"),
-		);
-	}
-
-	return encodedData.slice(0, encodedData.length - bitsToIgnoreAtEnd);
-}
-
-function huffmanDecode(data: Uint8Array) {
-	let pos = 0;
-
-	const bitsToIgnoreAtEnd = data[pos++];
-
-	// unpack frequency map uint sizes
-
-	let frequencyUintSizes: number[] = []; // 8, 16, 32, -1
-
-	while (true) {
-		let byte = data[pos++];
-		let binary = byte.toString(2).padStart(8, "0");
-
-		let uintSizes = chunk(binary.split(""), 2)
-			.map(a => a.join(""))
-			.map(type => {
-				if (type == "00") {
-					return 8;
-				} else if (type == "01") {
-					return 16;
-				} else if (type == "10") {
-					return 32;
-				} else {
-					return -1;
-				}
-			});
-
-		if (uintSizes.includes(-1)) {
-			// EOF found
-			// remove -1 and all after
-			uintSizes.splice(uintSizes.indexOf(-1), 999);
-			// append and break
-			frequencyUintSizes = [...frequencyUintSizes, ...uintSizes];
-			break;
-		} else {
-			// just append
-			frequencyUintSizes = [...frequencyUintSizes, ...uintSizes];
-		}
-	}
-
-	// unpack frequency map data
-
-	const frequencyMap: FrequencyMap = new Map();
-
-	for (const uintSize of frequencyUintSizes) {
-		const byte = data[pos++];
-
-		let frequency = 0;
-
-		if (uintSize == 8) {
-			frequency = data[pos++];
-		} else if (uintSize == 16) {
-			frequency = uint16ToNumber(
-				Uint8Array.from([data[pos++], data[pos++]]),
-			);
-		} else if (uintSize == 32) {
-			frequency = uint32ToNumber(
-				Uint8Array.from([
-					data[pos++],
-					data[pos++],
-					data[pos++],
-					data[pos++],
-				]),
-			);
-		}
-
-		frequencyMap.set(byte, frequency);
-	}
-
-	// unpack encoded data
-
-	const packedEncodedData = data.slice(pos);
-
-	const encodedData = unpackEncodedData(packedEncodedData, bitsToIgnoreAtEnd);
-
-	const decodedData = decode(frequencyMap, encodedData);
-
-	return decodedData;
-}
-
 export function makiHuffmanDecode(data: Uint8Array) {
 	const rounds = data[0];
 
-	// this is to optimize for c
-	// const finalDataSize = uint32ToNumber(data.slice(1, 5));
-
-	let currentData = data.slice(5, data.length);
+	let currentData = data.slice(1, data.length);
 
 	for (let i = 0; i < rounds; i++) {
 		currentData = huffmanDecode(currentData);
@@ -427,25 +426,24 @@ export function makiHuffmanDecode(data: Uint8Array) {
 	return currentData;
 }
 
+// const testInput = await Deno.readFile("./test-input.png");
 // console.log(testInput.length / 1000 + " KB");
 
-// const testInput = await Deno.readFile("./test-input.png");
-// // // console.log(testInput[testInput.length - 1].toString(2).padStart(8, "0"));
+// let testEncoded = makiHuffmanEncode(testInput);
+// console.log(testEncoded.length / 1000 + " KB");
 
-// let testEncoded = huffmanEncode(testInput);
 // await Deno.writeFile("./test-compressed.raw", testEncoded);
 
 // // let testDecoded = makiHuffmanDecode(testEncoded);
 
-// // // console.log(testDecoded[testInput.length - 1].toString(2).padStart(8, "0"));
 // // await Deno.writeFile("./test-output.png", testDecoded);
-
-// const cData = Array.from(testEncoded).join(",");
 
 // const cOut = `
 // #ifndef TEST_IMAGE
 // #define TEST_IMAGE
-// const unsigned char test_image[${testEncoded.length}] = {${cData}};
+// const unsigned char test_image[${testEncoded.length}] = {${Array.from(
+// 	testEncoded,
+// ).join(",")}};
 // #endif
 // `;
 
