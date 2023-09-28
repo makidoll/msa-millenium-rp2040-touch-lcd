@@ -266,9 +266,11 @@ function huffmanEncode(data: Uint8Array) {
 
 // running huffman encoding multiple times compresses down really well
 // so keep encoding until at smallest and then append rounds to file
-
+//
 // [uint8: rounds]
-// [uint32: final decoded size]
+// [uint32: final decoded size, helps for decompressing efficiently]
+//
+// ...packed
 
 export function makiHuffmanEncode(data: Uint8Array) {
 	let rounds = 0;
