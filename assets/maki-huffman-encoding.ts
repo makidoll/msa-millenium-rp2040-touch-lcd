@@ -1,3 +1,6 @@
+// js implementation isnt perfect. should really do more bitwise rather
+// than .toString(2) .padStart(8,"0") and parseInt(n,2)
+
 type FrequencyMap = Map<number, number>; // byte, frequency
 
 function getFrequencyMap(data: Uint8Array): FrequencyMap {
@@ -303,10 +306,10 @@ function unpackNodesFromRoot(data: Uint8Array, pos: number) {
 
 	// pos starts at byte array
 
-	let hasSideCurrentIndex = 0;
+	let nodeCurrentIndex = 0;
 
-	function processHasSide(): DecodeNode {
-		const hasSide = hasSideArray[hasSideCurrentIndex];
+	function processNode(): DecodeNode {
+		const hasSide = hasSideArray[nodeCurrentIndex];
 
 		if (hasSide.left == false && hasSide.right == false) {
 			return { byte: data[pos++] };
@@ -315,19 +318,19 @@ function unpackNodesFromRoot(data: Uint8Array, pos: number) {
 		const node: DecodeNode = {};
 
 		if (hasSide.left) {
-			hasSideCurrentIndex++;
-			node.left = processHasSide();
+			nodeCurrentIndex++;
+			node.left = processNode();
 		}
 
 		if (hasSide.right) {
-			hasSideCurrentIndex++;
-			node.right = processHasSide();
+			nodeCurrentIndex++;
+			node.right = processNode();
 		}
 
 		return node;
 	}
 
-	const rootNode = processHasSide();
+	const rootNode = processNode();
 
 	return { rootNode, pos };
 }
@@ -434,9 +437,10 @@ export function makiHuffmanDecode(data: Uint8Array) {
 
 // await Deno.writeFile("./test-compressed.raw", testEncoded);
 
-// // let testDecoded = makiHuffmanDecode(testEncoded);
+// const testEncoded = await Deno.readFile("./test-compressed.raw");
+// let testDecoded = makiHuffmanDecode(testEncoded);
 
-// // await Deno.writeFile("./test-output.png", testDecoded);
+// await Deno.writeFile("./test-js-output.png", testDecoded);
 
 // const cOut = `
 // #ifndef TEST_IMAGE
