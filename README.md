@@ -30,10 +30,12 @@ Long hold on screen to change screen
 
 ## Tools
 
--   **convert-as-240-h** examples:
+-   **make-image** examples:
 
-    Resizes images to 240x240 using Lanczos2 and saves as const unsigned char .h files
+    -   Resize image to 240x240 using Lanczos
+    -   Compress using huffman encoding and custom bitpacking to reduce size
+    -   Save as const unsigned char .h file
 
-    `deno run -A assets/convert-as-240-h.ts assets/maki.png src/images/maki_image.h`
+    `deno run -A assets/make-image.ts assets/maki.png src/images/maki_image.h`
 
-    `deno run -A assets/convert-as-240-h.ts assets/hexcorp.png src/images/hexcorp_image.h --grayscale`
+    `deno run -A assets/make-image.ts assets/hexcorp.png src/images/hexcorp_image.h --grayscale`
