@@ -394,19 +394,34 @@ function huffmanDecode(data: Uint8Array) {
 // ...packed
 
 export function makiHuffmanEncode(data: Uint8Array) {
-	let rounds = 0;
-	let currentData: Uint8Array = data;
+	// let rounds = 0;
+	// let currentData: Uint8Array = data;
 
-	while (true) {
-		const newData = huffmanEncode(currentData);
-		if (newData.length > currentData.length) break;
-		currentData = newData;
-		rounds++;
-	}
+	// while (true) {
+	// 	const newData = huffmanEncode(currentData);
+	// 	if (newData.length > currentData.length) break;
+	// 	currentData = newData;
+	// 	rounds++;
+	// }
 
-	if (rounds == 0) {
-		throw new Error("Can't compress even once");
-	}
+	// if (rounds == 0) {
+	// 	throw new Error("Can't compress even once");
+	// }
+
+	// const finalData = new Uint8Array(1 + currentData.length);
+
+	// finalData[0] = rounds;
+
+	// for (let i = 0; i < currentData.length; i++) {
+	// 	finalData[1 + i] = currentData[i];
+	// }
+
+	// return finalData;
+
+	// TODO: gotta optimize memory in c to increase rounds
+
+	let rounds = 1;
+	let currentData = huffmanEncode(data);
 
 	const finalData = new Uint8Array(1 + currentData.length);
 
@@ -455,3 +470,7 @@ export function makiHuffmanDecode(data: Uint8Array) {
 // const testDecoded = makiHuffmanDecode(testEncoded);
 
 // await Deno.writeFile("./output.raw", testDecoded);
+
+// const testEncoded = await Deno.readFile("./encoded.raw");
+// const testDecoded = makiHuffmanDecode(testEncoded);
+// await Deno.writeFile("./test-output-js.raw", testDecoded);

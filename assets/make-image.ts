@@ -61,7 +61,7 @@ if (!grayscale) {
 	finalImageDataLength *= 2;
 }
 
-const finalImageData: Uint8Array = new Uint8Array(width * height);
+const finalImageData = new Uint8Array(finalImageDataLength);
 
 for (let i = 0; i < width * height; i++) {
 	// const x = i % width;
@@ -82,14 +82,19 @@ for (let i = 0; i < width * height; i++) {
 
 // could save here but we're gonna do huffman encoding
 
-const compressed = makiHuffmanEncode(finalImageData);
+// await Deno.writeFile("./input.raw", finalImageData);
 
-console.log();
+const compressed = makiHuffmanEncode(finalImageData);
+// const compressed = finalImageData;
+
+// await Deno.writeFile("./encoded.raw", compressed);
 
 const varName = path.basename(outputFile).replace(/\.h$/, "");
 const headerName = varName.toUpperCase();
 
-const cData = Array.from(compressed).join(",");
+const cData = Array.from(compressed)
+	.map(v => v)
+	.join(",");
 
 const cOut = `
 #ifndef ${headerName}

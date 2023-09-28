@@ -1,8 +1,7 @@
-#include <stdint.h>
+#include "maki_huffman_decode.h"
+
 #include <stdio.h>
 #include <stdlib.h>
-
-#include "test_image.h"
 
 void printBitsUint8(uint8_t num) {
 	uint8_t mask = 0b10000000;
@@ -131,11 +130,6 @@ uint8_t getNextBit(const uint8_t* data, uint32_t* pos, uint8_t* bitPos) {
 	return bit;
 }
 
-typedef struct DataWithSize {
-	const uint8_t* data;
-	uint32_t size;
-} DataWithSize;
-
 // header (fixed length of 1 byte):
 //
 // [uint8: how many bits to ignore on last byte, since data is packed]
@@ -160,7 +154,9 @@ DataWithSize huffmanDecode(DataWithSize data, uint32_t pos) {
 
 	DecodeNode* currentNode = nodesFromRoot.rootNode;
 
-	while (pos < data.size - bitsToIgnoreAtEnd) {
+	while (pos < data.size) {
+		if (pos == data.size - 1 && bitPos > 7 - bitsToIgnoreAtEnd) break;
+
 		uint8_t bit = getNextBit(data.data, &pos, &bitPos);
 
 		if (bit == 0) {
@@ -197,26 +193,28 @@ DataWithSize makiHuffmanDecode(DataWithSize data) {
 	uint8_t rounds = data.data[pos++];
 
 	for (uint8_t i = 0; i < rounds; i++) {
-		data = huffmanDecode(data, pos);
+		DataWithSize newData = huffmanDecode(data, pos);
+		if (i > 0) free((void*)data.data);
+		data = newData;
 		pos = 0;
 	}
 
 	return data;
 }
 
-int main() {
-	DataWithSize dataWithSize;
-	dataWithSize.data = test_image;
-	dataWithSize.size = sizeof(test_image);
+// int main() {
+// 	DataWithSize dataWithSize;
+// 	dataWithSize.data = test_image;
+// 	dataWithSize.size = sizeof(test_image);
 
-	DataWithSize decodedData = makiHuffmanDecode(dataWithSize);
+// 	DataWithSize decodedData = makiHuffmanDecode(dataWithSize);
 
-	// DataWithSize decodedData = huffmanDecode(test_image, 0);
+// 	// DataWithSize decodedData = huffmanDecode(test_image, 0);
 
-	FILE* file = fopen("test-output.png", "w");
-	fwrite(decodedData.data, 1, decodedData.size, file);
+// 	FILE* file = fopen("test-output.png", "w");
+// 	fwrite(decodedData.data, 1, decodedData.size, file);
 
-	free((void*)decodedData.data);
+// 	free((void*)decodedData.data);
 
-	return 0;
-}
+// 	return 0;
+// }

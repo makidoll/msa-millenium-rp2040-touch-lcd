@@ -23,7 +23,8 @@ include_directories(./lib/Touch)
 include_directories(./lib/QMI8658)
 
 # 生成可执行文件
-add_executable(main 
+add_executable(main
+	./src/maki_huffman_decode.c
 	./src/main.c
 )
 
