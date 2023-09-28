@@ -366,7 +366,9 @@ function huffmanDecode(data: Uint8Array) {
 
 	let currentNode: DecodeNode = rootNode;
 
-	while (pos < data.length - bitsToIgnoreAtEnd) {
+	while (pos < data.length) {
+		if (pos == data.length - 1 && bitPos > 7 - bitsToIgnoreAtEnd) break;
+
 		const bit = getNextBit();
 
 		if (bit == "0") {
@@ -429,26 +431,27 @@ export function makiHuffmanDecode(data: Uint8Array) {
 	return currentData;
 }
 
-// const testInput = await Deno.readFile("./test-input.png");
 // console.log(testInput.length / 1000 + " KB");
 
-// let testEncoded = makiHuffmanEncode(testInput);
-// console.log(testEncoded.length / 1000 + " KB");
+// const testInput = await Deno.readFile("./input.raw");
 
-// await Deno.writeFile("./test-compressed.raw", testEncoded);
+// const testEncoded = makiHuffmanEncode(testInput);
 
-// const testEncoded = await Deno.readFile("./test-compressed.raw");
-// let testDecoded = makiHuffmanDecode(testEncoded);
+// await Deno.writeFile("./encoded.raw", testEncoded);
 
-// await Deno.writeFile("./test-js-output.png", testDecoded);
-
-// const cOut = `
+// {
+// 	const cOut = `
 // #ifndef TEST_IMAGE
 // #define TEST_IMAGE
 // const unsigned char test_image[${testEncoded.length}] = {${Array.from(
-// 	testEncoded,
-// ).join(",")}};
+// 		testEncoded,
+// 	).join(",")}};
 // #endif
 // `;
 
-// await Deno.writeTextFile("./test_image.h", cOut.trim() + "\n");
+// 	await Deno.writeTextFile("./test_image.h", cOut.trim() + "\n");
+// }
+
+// const testDecoded = makiHuffmanDecode(testEncoded);
+
+// await Deno.writeFile("./output.raw", testDecoded);
