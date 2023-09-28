@@ -427,12 +427,12 @@ export function makiHuffmanDecode(data: Uint8Array) {
 
 // console.log(testInput.length / 1000 + " KB");
 
-const testInput = await Deno.readFile("./test-input.png");
-// console.log(testInput[testInput.length - 1].toString(2).padStart(8, "0"));
+// const testInput = await Deno.readFile("./test-input.png");
+// // console.log(testInput[testInput.length - 1].toString(2).padStart(8, "0"));
 
-let testEncoded = makiHuffmanEncode(testInput);
+// let testEncoded = makiHuffmanEncode(testInput);
 
-let testDecoded = makiHuffmanDecode(testEncoded);
+// let testDecoded = makiHuffmanDecode(testEncoded);
 
-// console.log(testDecoded[testInput.length - 1].toString(2).padStart(8, "0"));
-await Deno.writeFile("./test-output.png", testDecoded);
+// // console.log(testDecoded[testInput.length - 1].toString(2).padStart(8, "0"));
+// await Deno.writeFile("./test-output.png", testDecoded);
