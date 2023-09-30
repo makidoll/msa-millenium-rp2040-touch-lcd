@@ -25,11 +25,6 @@ void printBitsUint16(uint16_t num) {
 	((data[pos++]) + (data[pos++] << 8) + (data[pos++] << 16) + \
 	 (data[pos++] << 24));
 
-typedef struct HasSide {
-	uint8_t left;
-	uint8_t right;
-} HasSide;
-
 typedef struct DecodeNode {
 	struct DecodeNode* left;
 	struct DecodeNode* right;
@@ -38,18 +33,29 @@ typedef struct DecodeNode {
 } DecodeNode;
 
 typedef struct DecodeNodeProcessing {
-	HasSide* hasSideArray;
 	DecodeNode* nodeArray;
 	uint32_t nodeCurrentIndex;
 	const uint8_t* data;
 	uint32_t pos;
+	uint32_t nodeArrayPos;
 } DecodeNodeProcessing;
 
+uint8_t getLeftRight(DecodeNodeProcessing* state, const uint32_t index,
+                     const uint8_t needRight) {
+	const uint32_t bytePos = state->nodeCurrentIndex / 4;
+	const uint8_t bitPos =
+	    (state->nodeCurrentIndex % 4) * 2 + (needRight);  // 0 left, 1 right
+
+	return (state->data[state->nodeArrayPos + bytePos] >> (7 - bitPos)) & 1;
+}
+
 struct DecodeNode* processDecodeNode(DecodeNodeProcessing* state) {
-	HasSide* hasSide = &state->hasSideArray[state->nodeCurrentIndex];
+	uint8_t hasLeft = getLeftRight(state, state->nodeCurrentIndex, 0);
+	uint8_t hasRight = getLeftRight(state, state->nodeCurrentIndex, 1);
+
 	DecodeNode* node = &state->nodeArray[state->nodeCurrentIndex];
 
-	if (hasSide->left == 0 && hasSide->right == 0) {
+	if (hasLeft == 0 && hasRight == 0) {
 		node->byte = state->data[state->pos++];
 		node->hasByte = 1;
 		return node;
@@ -57,12 +63,12 @@ struct DecodeNode* processDecodeNode(DecodeNodeProcessing* state) {
 
 	node->hasByte = 0;
 
-	if (hasSide->left == 1) {
+	if (hasLeft == 1) {
 		state->nodeCurrentIndex++;
 		node->left = processDecodeNode(state);
 	}
 
-	if (hasSide->right == 1) {
+	if (hasRight == 1) {
 		state->nodeCurrentIndex++;
 		node->right = processDecodeNode(state);
 	}
@@ -79,33 +85,21 @@ typedef struct UnpackNodesFromRoot {
 UnpackNodesFromRoot unpackNodesFromRoot(const uint8_t* data, uint32_t pos,
                                         uint32_t totalNodes,
                                         DecodeNode* nodeArray) {
-	HasSide hasSideArray[totalNodes];
+	// pos currently at node array
+	// byte array is ceil(totalNodes / 4) away
+	// since we're packing 4 nodes in a byte
 
-	uint32_t nodesRead = 0;
-
-	uint8_t i = 0;
-
-	while (nodesRead < totalNodes) {
-		for (i = 0; i < 8; i += 2) {
-			hasSideArray[nodesRead].left = (data[pos] >> (7 - i)) & 1;
-			hasSideArray[nodesRead].right = (data[pos] >> (7 - i - 1)) & 1;
-
-			nodesRead++;
-
-			if (nodesRead >= totalNodes) break;
-		}
-
-		pos++;
-	}
+	uint32_t nodeArrayLength =
+	    (totalNodes / 4) + ((totalNodes % 4 > 0) ? 1 : 0);
 
 	// pos starts at byte array
 
 	DecodeNodeProcessing decodeNodeProcessing;
-	decodeNodeProcessing.hasSideArray = hasSideArray;
 	decodeNodeProcessing.nodeArray = nodeArray;
 	decodeNodeProcessing.nodeCurrentIndex = 0;
 	decodeNodeProcessing.data = data;
-	decodeNodeProcessing.pos = pos;
+	decodeNodeProcessing.pos = pos + nodeArrayLength;
+	decodeNodeProcessing.nodeArrayPos = pos;
 
 	DecodeNode* rootNode = processDecodeNode(&decodeNodeProcessing);
 
@@ -114,7 +108,7 @@ UnpackNodesFromRoot unpackNodesFromRoot(const uint8_t* data, uint32_t pos,
 	UnpackNodesFromRoot out;
 	out.nodeArray = nodeArray;
 	out.rootNode = rootNode;
-	out.pos = decodeNodeProcessing.pos;
+	out.pos = decodeNodeProcessing.pos;  // can be optimized out
 
 	return out;
 }
@@ -145,7 +139,6 @@ DataWithSize huffmanDecode(DataWithSize data, uint32_t pos) {
 	uint8_t bitsToIgnoreAtEnd = data.data[pos++];
 
 	uint32_t decodedSize = READ_UINT32(data.data, pos);
-
 	uint32_t totalNodes = READ_UINT32(data.data, pos);
 
 	DecodeNode nodeArray[totalNodes];
