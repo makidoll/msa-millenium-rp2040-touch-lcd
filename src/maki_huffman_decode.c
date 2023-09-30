@@ -136,10 +136,10 @@ uint8_t getNextBit(const uint8_t* data, uint32_t* pos, uint8_t* bitPos) {
 // ...packed data
 
 DataWithSize huffmanDecode(DataWithSize data, uint32_t pos) {
-	uint8_t bitsToIgnoreAtEnd = data.data[pos++];
+	const uint8_t bitsToIgnoreAtEnd = data.data[pos++];
 
-	uint32_t decodedSize = READ_UINT32(data.data, pos);
-	uint32_t totalNodes = READ_UINT32(data.data, pos);
+	const uint32_t decodedSize = READ_UINT32(data.data, pos);
+	const uint32_t totalNodes = READ_UINT32(data.data, pos);
 
 	DecodeNode nodeArray[totalNodes];
 	UnpackNodesFromRoot nodesFromRoot = unpackNodesFromRoot(
@@ -186,16 +186,16 @@ DataWithSize huffmanDecode(DataWithSize data, uint32_t pos) {
 // ...packed
 
 DataWithSize makiHuffmanDecode(DataWithSize data) {
-	uint32_t pos = 0;
-
-	uint8_t rounds = data.data[pos++];
+	uint8_t rounds = data.data[0];
 	printf("%u\n", rounds);
 
+	uint8_t firstRound = 1;
+
 	for (uint8_t i = 0; i < rounds; i++) {
-		DataWithSize newData = huffmanDecode(data, pos);
-		if (i > 0) free((void*)data.data);
+		DataWithSize newData = huffmanDecode(data, firstRound ? 1u : 0u);
+		if (firstRound == 0) free((void*)data.data);
 		data = newData;
-		pos = 0;
+		firstRound = 0;
 	}
 
 	return data;
