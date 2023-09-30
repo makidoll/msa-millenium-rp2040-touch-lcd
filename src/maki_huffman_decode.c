@@ -21,6 +21,10 @@ void printBitsUint16(uint16_t num) {
 	printf("\n");
 }
 
+#define READ_UINT32(data, pos)                                  \
+	((data[pos++]) + (data[pos++] << 8) + (data[pos++] << 16) + \
+	 (data[pos++] << 24));
+
 typedef struct HasSide {
 	uint8_t left;
 	uint8_t right;
@@ -72,12 +76,10 @@ typedef struct UnpackNodesFromRoot {
 	uint32_t pos;
 } UnpackNodesFromRoot;
 
-UnpackNodesFromRoot unpackNodesFromRoot(const uint8_t* data, uint32_t pos) {
-	uint32_t totalNodes = (data[pos++]) + (data[pos++] << 8) +
-	                      (data[pos++] << 16) + (data[pos++] << 24);
-
+UnpackNodesFromRoot unpackNodesFromRoot(const uint8_t* data, uint32_t pos,
+                                        uint32_t totalNodes,
+                                        DecodeNode* nodeArray) {
 	HasSide hasSideArray[totalNodes];
-	DecodeNode* nodeArray = malloc(totalNodes * sizeof(DecodeNode));
 
 	uint32_t nodesRead = 0;
 
@@ -141,10 +143,15 @@ uint8_t getNextBit(const uint8_t* data, uint32_t* pos, uint8_t* bitPos) {
 
 DataWithSize huffmanDecode(DataWithSize data, uint32_t pos) {
 	uint8_t bitsToIgnoreAtEnd = data.data[pos++];
-	uint32_t decodedSize = (data.data[pos++]) + (data.data[pos++] << 8) +
-	                       (data.data[pos++] << 16) + (data.data[pos++] << 24);
 
-	UnpackNodesFromRoot nodesFromRoot = unpackNodesFromRoot(data.data, pos);
+	uint32_t decodedSize = READ_UINT32(data.data, pos);
+
+	uint32_t totalNodes = READ_UINT32(data.data, pos);
+
+	DecodeNode nodeArray[totalNodes];
+	UnpackNodesFromRoot nodesFromRoot = unpackNodesFromRoot(
+	    data.data, pos, totalNodes, (DecodeNode*)&nodeArray);
+
 	pos = nodesFromRoot.pos;
 
 	uint8_t bitPos = 0;
@@ -171,8 +178,6 @@ DataWithSize huffmanDecode(DataWithSize data, uint32_t pos) {
 		}
 	}
 
-	free(nodesFromRoot.nodeArray);
-
 	DataWithSize out;
 	out.data = decodedData;
 	out.size = decodedSize;
@@ -191,6 +196,7 @@ DataWithSize makiHuffmanDecode(DataWithSize data) {
 	uint32_t pos = 0;
 
 	uint8_t rounds = data.data[pos++];
+	printf("%u\n", rounds);
 
 	for (uint8_t i = 0; i < rounds; i++) {
 		DataWithSize newData = huffmanDecode(data, pos);
