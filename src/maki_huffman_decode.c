@@ -76,43 +76,6 @@ struct DecodeNode* processDecodeNode(DecodeNodeProcessing* state) {
 	return node;
 }
 
-typedef struct UnpackNodesFromRoot {
-	DecodeNode* nodeArray;
-	DecodeNode* rootNode;
-	uint32_t pos;
-} UnpackNodesFromRoot;
-
-UnpackNodesFromRoot unpackNodesFromRoot(const uint8_t* data, uint32_t pos,
-                                        uint32_t totalNodes,
-                                        DecodeNode* nodeArray) {
-	// pos currently at node array
-	// byte array is ceil(totalNodes / 4) away
-	// since we're packing 4 nodes in a byte
-
-	uint32_t nodeArrayLength =
-	    (totalNodes / 4) + ((totalNodes % 4 > 0) ? 1 : 0);
-
-	// pos starts at byte array
-
-	DecodeNodeProcessing decodeNodeProcessing;
-	decodeNodeProcessing.nodeArray = nodeArray;
-	decodeNodeProcessing.nodeCurrentIndex = 0;
-	decodeNodeProcessing.data = data;
-	decodeNodeProcessing.pos = pos + nodeArrayLength;
-	decodeNodeProcessing.nodeArrayPos = pos;
-
-	DecodeNode* rootNode = processDecodeNode(&decodeNodeProcessing);
-
-	// free(nodeArray) outside of function
-
-	UnpackNodesFromRoot out;
-	out.nodeArray = nodeArray;
-	out.rootNode = rootNode;
-	out.pos = decodeNodeProcessing.pos;  // can be optimized out
-
-	return out;
-}
-
 uint8_t getNextBit(const uint8_t* data, uint32_t* pos, uint8_t* bitPos) {
 	if (*bitPos > 7) {
 		*bitPos = 0;
@@ -141,18 +104,36 @@ DataWithSize huffmanDecode(DataWithSize data, uint32_t pos) {
 	const uint32_t decodedSize = READ_UINT32(data.data, pos);
 	const uint32_t totalNodes = READ_UINT32(data.data, pos);
 
-	DecodeNode nodeArray[totalNodes];
-	UnpackNodesFromRoot nodesFromRoot = unpackNodesFromRoot(
-	    data.data, pos, totalNodes, (DecodeNode*)&nodeArray);
+	// unpack node array
 
-	pos = nodesFromRoot.pos;
+	DecodeNode nodeArray[totalNodes];
+
+	// pos currently at node array
+
+	DecodeNodeProcessing decodeNodeProcessing;
+	decodeNodeProcessing.nodeArray = nodeArray;
+	decodeNodeProcessing.nodeArrayPos = pos;
+
+	// byte array is ceil(totalNodes / 4) away
+	// since we're packing 4 nodes in a byte
+
+	pos += (totalNodes / 4) + ((totalNodes % 4 > 0) ? 1 : 0);
+
+	decodeNodeProcessing.nodeCurrentIndex = 0;
+	decodeNodeProcessing.data = data.data;
+	decodeNodeProcessing.pos = pos;
+
+	DecodeNode* rootNode = processDecodeNode(&decodeNodeProcessing);
+	pos = decodeNodeProcessing.pos;
+
+	// unpack data
 
 	uint8_t bitPos = 0;
 
 	uint8_t* decodedData = malloc(decodedSize);
 	uint32_t decodedDataIndex = 0;
 
-	DecodeNode* currentNode = nodesFromRoot.rootNode;
+	DecodeNode* currentNode = rootNode;
 
 	while (pos < data.size) {
 		if (pos == data.size - 1 && bitPos > 7 - bitsToIgnoreAtEnd) break;
@@ -167,7 +148,7 @@ DataWithSize huffmanDecode(DataWithSize data, uint32_t pos) {
 
 		if (currentNode->hasByte) {
 			decodedData[decodedDataIndex++] = currentNode->byte;
-			currentNode = nodesFromRoot.rootNode;
+			currentNode = rootNode;
 		}
 	}
 
