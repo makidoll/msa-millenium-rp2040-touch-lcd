@@ -8,14 +8,12 @@
 #include "../maki_huffman_decode.h"
 
 typedef struct {
-	DataWithSize image;
+	uint8_t* image;
 } MakiProfilePictureScreenState;
 
 void InitMakiProfilePictureScreenState(MakiProfilePictureScreenState* state) {
-	DataWithSize input;
-	input.data = maki_image;
-	input.size = sizeof(maki_image);
-	state->image = makiHuffmanDecode(input);
+	uint32_t size = sizeof(maki_image);
+	state->image = makiHuffmanDecode(maki_image, &size);
 }
 
 // TODO: free image for deinit
@@ -23,10 +21,9 @@ void InitMakiProfilePictureScreenState(MakiProfilePictureScreenState* state) {
 bool MakiProfilePictureScreen(MakiProfilePictureScreenState* state,
                               uint16_t* buffer, bool redraw) {
 	if (redraw) {
-		const uint8_t* data = state->image.data;
 		for (uint16_t i = 0; i < 240 * 240; i++) {
-			buffer[i] =
-			    ((uint16_t)data[i * 2] << 8) | ((uint16_t)data[i * 2 + 1]);
+			buffer[i] = ((uint16_t)state->image[i * 2] << 8) |
+			            ((uint16_t)state->image[i * 2 + 1]);
 		}
 
 		return true;

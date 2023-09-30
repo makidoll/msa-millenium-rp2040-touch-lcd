@@ -21,7 +21,11 @@ void printBitsUint16(uint16_t num) {
 	printf("\n");
 }
 
-#define READ_UINT32(data, pos)                                  \
+#define READ_UINT32(data, pos)                                    \
+	((data[pos]) + (data[pos + 1] << 8) + (data[pos + 2] << 16) + \
+	 (data[pos + 3] << 24));
+
+#define READ_UINT32_MOVE_POS(data, pos)                         \
 	((data[pos++]) + (data[pos++] << 8) + (data[pos++] << 16) + \
 	 (data[pos++] << 24));
 
@@ -98,11 +102,18 @@ uint8_t getNextBit(const uint8_t* data, uint32_t* pos, uint8_t* bitPos) {
 //
 // ...packed data
 
-DataWithSize huffmanDecode(DataWithSize data, uint32_t pos) {
-	const uint8_t bitsToIgnoreAtEnd = data.data[pos++];
+uint32_t getDecodedSize(const uint8_t* data, uint32_t pos) {
+	// ignore pos 0, bits to ignore
+	return READ_UINT32(data, pos + 1);
+}
 
-	const uint32_t decodedSize = READ_UINT32(data.data, pos);
-	const uint32_t totalNodes = READ_UINT32(data.data, pos);
+void huffmanDecode(const uint8_t* data, uint32_t* size, uint32_t pos,
+                   uint8_t* decodedData, const uint32_t decodedSize) {
+	const uint8_t bitsToIgnoreAtEnd = data[pos++];
+
+	pos += 4;  // decoded size;
+
+	const uint32_t totalNodes = READ_UINT32_MOVE_POS(data, pos);
 
 	// unpack node array
 
@@ -120,7 +131,7 @@ DataWithSize huffmanDecode(DataWithSize data, uint32_t pos) {
 	pos += (totalNodes / 4) + ((totalNodes % 4 > 0) ? 1 : 0);
 
 	decodeNodeProcessing.nodeCurrentIndex = 0;
-	decodeNodeProcessing.data = data.data;
+	decodeNodeProcessing.data = data;
 	decodeNodeProcessing.pos = pos;
 
 	DecodeNode* rootNode = processDecodeNode(&decodeNodeProcessing);
@@ -130,15 +141,14 @@ DataWithSize huffmanDecode(DataWithSize data, uint32_t pos) {
 
 	uint8_t bitPos = 0;
 
-	uint8_t* decodedData = malloc(decodedSize);
 	uint32_t decodedDataIndex = 0;
 
 	DecodeNode* currentNode = rootNode;
 
-	while (pos < data.size) {
-		if (pos == data.size - 1 && bitPos > 7 - bitsToIgnoreAtEnd) break;
+	while (pos < *size) {
+		if (pos == *size - 1 && bitPos > 7 - bitsToIgnoreAtEnd) break;
 
-		uint8_t bit = getNextBit(data.data, &pos, &bitPos);
+		uint8_t bit = getNextBit(data, &pos, &bitPos);
 
 		if (bit == 0) {
 			currentNode = currentNode->left;
@@ -151,12 +161,6 @@ DataWithSize huffmanDecode(DataWithSize data, uint32_t pos) {
 			currentNode = rootNode;
 		}
 	}
-
-	DataWithSize out;
-	out.data = decodedData;
-	out.size = decodedSize;
-
-	return out;
 }
 
 // running huffman encoding multiple times compresses down really well
@@ -166,20 +170,48 @@ DataWithSize huffmanDecode(DataWithSize data, uint32_t pos) {
 //
 // ...packed
 
-DataWithSize makiHuffmanDecode(DataWithSize data) {
-	uint8_t rounds = data.data[0];
-	printf("%u\n", rounds);
+uint8_t* makiHuffmanDecode(const uint8_t* data, uint32_t* size) {
+	uint8_t pos = 0;  // only goes from 0 to 1 to 0 and stays
 
-	uint8_t firstRound = 1;
+	const uint8_t rounds = data[pos++];
+	printf("%u rounds\n", rounds);
+
+	uint8_t* bufferA = (uint8_t*)data;
+	uint8_t* bufferB = NULL;
+
+	// mallocing a lot here but its getting free'd
 
 	for (uint8_t i = 0; i < rounds; i++) {
-		DataWithSize newData = huffmanDecode(data, firstRound ? 1u : 0u);
-		if (firstRound == 0) free((void*)data.data);
-		data = newData;
-		firstRound = 0;
+		if (bufferB == NULL) {
+			// decode A into B
+
+			uint32_t decodedSize = getDecodedSize(bufferA, pos);
+			bufferB = malloc(decodedSize);
+
+			huffmanDecode(bufferA, size, pos, bufferB, decodedSize);
+
+			if (pos == 0) free(bufferA);  // not initial
+			pos = 0;
+
+			bufferA = NULL;
+		} else if (bufferA == NULL) {
+			// decode B into A
+
+			uint32_t decodedSize = getDecodedSize(bufferB, pos);
+			bufferA = malloc(decodedSize);
+
+			huffmanDecode(bufferB, size, pos, bufferA, decodedSize);
+
+			if (pos == 0) free(bufferB);  // not initial
+			// pos = 0; // only need to this for the initial A to B
+
+			bufferB = NULL;
+		}
 	}
 
-	return data;
+	// remember to free out of function
+
+	return bufferA == NULL ? bufferB : bufferA;
 }
 
 // int main() {

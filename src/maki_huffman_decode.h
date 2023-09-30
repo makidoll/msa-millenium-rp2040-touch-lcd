@@ -3,11 +3,6 @@
 
 #include <stdint.h>
 
-typedef struct DataWithSize {
-	const uint8_t* data;
-	uint32_t size;
-} DataWithSize;
-
-DataWithSize makiHuffmanDecode(DataWithSize data);
+uint8_t* makiHuffmanDecode(const uint8_t* data, uint32_t* size);
 
 #endif
